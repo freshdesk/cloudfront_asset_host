@@ -1,6 +1,8 @@
 require 'digest/md5'
 require 'cloudfront_asset_host/asset_tag_helper_ext'
 require 'digest/md5'
+require 'cloudfront_helper'
+require 'jammit'
 
 module CloudfrontAssetHost
 
@@ -46,6 +48,9 @@ module CloudfrontAssetHost
   # Key Regular Expression to filter out/exclude content
   mattr_accessor :exclude_pattern
 
+  #Key rewrite_css_path to rewrite css image urls with respective to cloudfront
+  mattr_accessor :rewrite_css_path
+
   class << self
 
     def configure
@@ -68,6 +73,8 @@ module CloudfrontAssetHost
 
       self.image_extensions = %w(jpg jpeg gif png)
 
+      self.rewrite_css_path = true
+
       yield(self)
 
       if properly_configured?
@@ -76,6 +83,7 @@ module CloudfrontAssetHost
     end
 
     def asset_host(source = nil, request = nil)
+      return unless CloudfrontAssetHost.enabled
       if cname.present?
         if cname.is_a?(Proc)
           host = cname.call(source, request)
@@ -87,6 +95,8 @@ module CloudfrontAssetHost
         host = "http://#{self.bucket_host}"
       end
 
+      host << "/#{CloudfrontAssetHost.key_for_path(source)}/#{Jammit.package_path}"
+      return host if CloudfrontAssetHost.image?(source)
       if source && request && CloudfrontAssetHost.gzip
         gzip_allowed  = CloudfrontAssetHost.gzip_allowed_for_source?(source)
 
@@ -115,13 +125,14 @@ module CloudfrontAssetHost
     def enable!
       if enabled
         ActionController::Base.asset_host = Proc.new { |source, request| CloudfrontAssetHost.asset_host(source, request) }
-        ActionView::Helpers::AssetTagHelper.send(:alias_method_chain, :rewrite_asset_path, :cloudfront)
-        ActionView::Helpers::AssetTagHelper.send(:alias_method_chain, :rails_asset_id, :cloudfront)
+        # ActionView::Helpers::AssetTagHelper.send(:alias_method_chain, :rewrite_asset_path, :cloudfront)
+        # ActionView::Helpers::AssetTagHelper.send(:alias_method_chain, :rails_asset_id, :cloudfront)
       end
     end
 
     def key_for_path(path)
-      key_prefix + md5sum(path)[0..8]
+      # key_prefix + md5sum(path)[0..8]
+      key_prefix
     end
 
     def gzip_allowed_for_source?(source)
@@ -140,6 +151,10 @@ module CloudfrontAssetHost
 
     def disable_cdn_for_source?(source)
       source.match(exclude_pattern) if exclude_pattern.present?
+    end
+
+    def gz?(path)
+      File.extname(path) == '.gz'
     end
 
   private

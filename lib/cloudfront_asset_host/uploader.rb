@@ -1,5 +1,6 @@
 require 'right_aws'
 require 'tempfile'
+require 'jammit'
 
 module CloudfrontAssetHost
   module Uploader
@@ -24,12 +25,13 @@ module CloudfrontAssetHost
         verbose = options[:verbose] || false
 
         keys_paths.each do |key, path|
+          next if CloudfrontAssetHost.gz?(path)
           if should_upload?(key, options)
             puts "+ #{key}" if verbose
 
             extension = File.extname(path)[1..-1]
 
-            path = rewritten_css_path(path)
+            path = rewritten_css_path(path) unless CloudfrontAssetHost.rewrite_css_path.eql?(false)
 
             data_path = gzip ? gzipped_path(path) : path
             bucket.put(key, File.read(data_path), {}, 'public-read', headers_for_path(extension, gzip)) unless dryrun
@@ -43,7 +45,8 @@ module CloudfrontAssetHost
 
       def should_upload?(key, options={})
         return false if CloudfrontAssetHost.disable_cdn_for_source?(key)
-        return true  if CloudfrontAssetHost.css?(key) && rewrite_all_css?
+        return true if CloudfrontAssetHost.gzip_allowed_for_source?(key)
+        return true  if CloudfrontAssetHost.css?(key) && (CloudfrontAssetHost.rewrite_css_path.eql?(false) || rewrite_all_css?)
 
         options[:force_write] || !existing_keys.include?(key)
       end
@@ -65,8 +68,12 @@ module CloudfrontAssetHost
 
       def keys_with_paths
         current_paths.inject({}) do |result, path|
-          key = CloudfrontAssetHost.plain_prefix.present? ? "#{CloudfrontAssetHost.plain_prefix}/" : ""
-          key << CloudfrontAssetHost.key_for_path(path) + path.gsub(Rails.public_path, '')
+          # key = CloudfrontAssetHost.plain_prefix.present? ? "#{CloudfrontAssetHost.plain_prefix}/" : ""
+          # key << CloudfrontAssetHost.key_for_path(path) + path.gsub(Rails.public_path, '')
+          key = ""
+          key << CloudfrontAssetHost.key_for_path(path)
+          key << path.gsub(Rails.public_path, '')
+          key = key.gsub("#{Jammit.package_path}", "#{Jammit.package_path}/#{CloudfrontAssetHost.plain_prefix}") unless CloudfrontAssetHost.image?(path)
 
           result[key] = path
           result
@@ -78,7 +85,8 @@ module CloudfrontAssetHost
           source = path.gsub(Rails.public_path, '')
 
           if CloudfrontAssetHost.gzip_allowed_for_source?(source)
-            key = "#{CloudfrontAssetHost.gzip_prefix}/" << CloudfrontAssetHost.key_for_path(path) << source
+            # key = "#{CloudfrontAssetHost.gzip_prefix}/" << CloudfrontAssetHost.key_for_path(path) << source
+            key =  CloudfrontAssetHost.key_for_path(path) << source.gsub("#{Jammit.package_path}", "#{Jammit.package_path}/#{CloudfrontAssetHost.gzip_prefix}")
             result[key] = path
           end
 
@@ -109,7 +117,7 @@ module CloudfrontAssetHost
         mime = ext_to_mime[extension] || 'application/octet-stream'
         headers = {
           'Content-Type' => mime,
-          'Cache-Control' => "max-age=#{10.years.to_i}",
+          'Cache-Control' => "public,max-age=#{1.years.to_i}",
           'Expires' => 1.year.from_now.utc.to_s
         }
         headers['Content-Encoding'] = 'gzip' if gzip
