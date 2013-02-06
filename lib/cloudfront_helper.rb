@@ -6,7 +6,7 @@ module CloudfrontHelper
 	end
 
 	def include_cloudfront_js(*packages)
-		js = include_javascripts
+		js = include_javascripts(*packages)
 		js = js.gsub("/#{Jammit.package_path}/#{packages}.js","/#{packages}.js") if CloudfrontAssetHost.enabled
 		js
 	end
