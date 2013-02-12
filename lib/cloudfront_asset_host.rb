@@ -123,11 +123,9 @@ module CloudfrontAssetHost
     end
 
     def enable!
-      if enabled
-        ActionController::Base.asset_host = Proc.new { |source, request| CloudfrontAssetHost.asset_host(source, request) }
-        # ActionView::Helpers::AssetTagHelper.send(:alias_method_chain, :rewrite_asset_path, :cloudfront)
-        # ActionView::Helpers::AssetTagHelper.send(:alias_method_chain, :rails_asset_id, :cloudfront)
-      end
+      ActionController::Base.asset_host = Proc.new { |source, request| CloudfrontAssetHost.asset_host(source, request) }
+      ActionView::Helpers::AssetTagHelper.send(:alias_method_chain, :rewrite_asset_path, :cloudfront)
+      ActionView::Helpers::AssetTagHelper.send(:alias_method_chain, :rails_asset_id, :cloudfront)
     end
 
     def key_for_path(path)
@@ -141,7 +139,7 @@ module CloudfrontAssetHost
     end
 
     def image?(path)
-      extension = path.split('.').last
+      extension = path.split('.').last.split('?')[0]
       CloudfrontAssetHost.image_extensions.include?(extension)
     end
 

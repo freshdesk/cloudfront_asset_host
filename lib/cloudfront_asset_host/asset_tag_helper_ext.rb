@@ -21,6 +21,7 @@ module ActionView
 
           asset_id
         end
+        return
       end
 
       # Override asset_path so it prepends the asset_id

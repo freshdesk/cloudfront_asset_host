@@ -1,4 +1,5 @@
-require 'right_aws'
+# require 'right_aws'
+require "aws/s3"
 require 'tempfile'
 require 'jammit'
 
@@ -8,6 +9,7 @@ module CloudfrontAssetHost
     class << self
 
       def upload!(options = {})
+        establish_connection
         puts "-- Updating uncompressed files" if options[:verbose]
         upload_keys_with_paths(keys_with_paths, options)
 
@@ -34,7 +36,7 @@ module CloudfrontAssetHost
             path = rewritten_css_path(path) unless CloudfrontAssetHost.rewrite_css_path.eql?(false)
 
             data_path = gzip ? gzipped_path(path) : path
-            bucket.put(key, File.read(data_path), {}, 'public-read', headers_for_path(extension, gzip)) unless dryrun
+            AWS::S3::S3Object.store(key, File.read(data_path), CloudfrontAssetHost.bucket, headers_for_path(extension, gzip)) unless dryrun
 
             File.unlink(data_path) if gzip && File.exists?(data_path)
           else
@@ -73,7 +75,7 @@ module CloudfrontAssetHost
           key = ""
           key << CloudfrontAssetHost.key_for_path(path)
           key << path.gsub(Rails.public_path, '')
-          key = key.gsub("#{Jammit.package_path}", "#{Jammit.package_path}/#{CloudfrontAssetHost.plain_prefix}") unless CloudfrontAssetHost.image?(path)
+          key = key.gsub("#{Jammit.package_path}/", "#{Jammit.package_path}/#{CloudfrontAssetHost.plain_prefix}/") unless CloudfrontAssetHost.image?(path)
 
           result[key] = path
           result
@@ -82,11 +84,12 @@ module CloudfrontAssetHost
 
       def gzip_keys_with_paths
         current_paths.inject({}) do |result, path|
-          source = path.gsub(Rails.public_path, '')
 
-          if CloudfrontAssetHost.gzip_allowed_for_source?(source)
-            # key = "#{CloudfrontAssetHost.gzip_prefix}/" << CloudfrontAssetHost.key_for_path(path) << source
-            key =  CloudfrontAssetHost.key_for_path(path) << source.gsub("#{Jammit.package_path}", "#{Jammit.package_path}/#{CloudfrontAssetHost.gzip_prefix}")
+          if CloudfrontAssetHost.gzip_allowed_for_source?(path)
+            key = ""
+            key << CloudfrontAssetHost.key_for_path(path)
+            key << path.gsub(Rails.public_path, '')
+            key = key.gsub("#{Jammit.package_path}/", "#{Jammit.package_path}/#{CloudfrontAssetHost.gzip_prefix}/")
             result[key] = path
           end
 
@@ -103,8 +106,8 @@ module CloudfrontAssetHost
           keys = []
           prefix = CloudfrontAssetHost.key_prefix
           prefix = "#{CloudfrontAssetHost.plain_prefix}/#{prefix}" if CloudfrontAssetHost.plain_prefix.present?
-          keys.concat bucket.keys('prefix' => prefix).map  { |key| key.name }
-          keys.concat bucket.keys('prefix' => CloudfrontAssetHost.gzip_prefix).map { |key| key.name }
+          # keys.concat bucket.keys('prefix' => prefix).map  { |key| key.name }
+          # keys.concat bucket.keys('prefix' => CloudfrontAssetHost.gzip_prefix).map { |key| key.name }
           keys
         end
       end
@@ -116,9 +119,10 @@ module CloudfrontAssetHost
       def headers_for_path(extension, gzip = false)
         mime = ext_to_mime[extension] || 'application/octet-stream'
         headers = {
-          'Content-Type' => mime,
-          'Cache-Control' => "public,max-age=#{1.years.to_i}",
-          'Expires' => 1.year.from_now.utc.to_s
+          :'Content-Type' => mime,
+          :'Cache-Control' => "public,max-age=#{1.years.to_i}",
+          :Expires => 1.year.from_now.utc.to_s,
+          :access => "public-read"
         }
         headers['Content-Encoding'] = 'gzip' if gzip
 
@@ -129,16 +133,21 @@ module CloudfrontAssetHost
         @ext_to_mime ||= Hash[ *( YAML::load_file(File.join(File.dirname(__FILE__), "mime_types.yml")).collect { |k,vv| vv.collect{ |v| [v,k] } }.flatten ) ]
       end
 
-      def bucket
-        @bucket ||= begin
-          bucket = s3.bucket(CloudfrontAssetHost.bucket)
-          bucket.disable_logging unless CloudfrontAssetHost.s3_logging
-          bucket
-        end
-      end
+      # def bucket
+      #   @bucket ||= begin
+      #     AWS::S3::Bucket.find(CloudfrontAssetHost.bucket)
+      #   end
+      # end
 
-      def s3
-        @s3 ||= RightAws::S3.new(config['access_key_id'], config['secret_access_key'])
+      # def s3
+      #   @s3 ||= RightAws::S3.new(config['access_key_id'], config['secret_access_key'])
+      # end
+
+      def establish_connection
+        AWS::S3::Base.establish_connection!( 
+            :access_key_id => config['access_key_id'],
+            :secret_access_key => config['secret_access_key']
+          )
       end
 
       def config
