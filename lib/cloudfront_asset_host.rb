@@ -83,7 +83,7 @@ module CloudfrontAssetHost
     end
 
     def asset_host(source = nil, request = nil)
-      return unless CloudfrontAssetHost.enabled
+      return if !CloudfrontAssetHost.enabled || !(request && request.params[:debug_assets].nil?)
       if cname.present?
         if cname.is_a?(Proc)
           host = cname.call(source, request)
@@ -95,8 +95,8 @@ module CloudfrontAssetHost
         host = "http://#{self.bucket_host}"
       end
 
-      host << "/#{CloudfrontAssetHost.key_for_path(source)}/#{Jammit.package_path}"
       return host if CloudfrontAssetHost.image?(source)
+      host << "/#{CloudfrontAssetHost.key_for_path(source)}/#{Jammit.package_path}"
       if source && request && CloudfrontAssetHost.gzip
         gzip_allowed  = CloudfrontAssetHost.gzip_allowed_for_source?(source)
 

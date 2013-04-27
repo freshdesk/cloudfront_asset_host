@@ -75,6 +75,7 @@ module CloudfrontAssetHost
           key = ""
           key << CloudfrontAssetHost.key_for_path(path)
           key << path.gsub(Rails.public_path, '')
+          key = key.gsub("#{CloudfrontAssetHost.key_prefix}/#{Jammit.package_path}/", '') if CloudfrontAssetHost.image?(path)
           key = key.gsub("#{Jammit.package_path}/", "#{Jammit.package_path}/#{CloudfrontAssetHost.plain_prefix}/") unless CloudfrontAssetHost.image?(path)
 
           result[key] = path
