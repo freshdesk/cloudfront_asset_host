@@ -1,5 +1,3 @@
-# require 'right_aws'
-require "aws/s3"
 require 'tempfile'
 require 'jammit'
 
@@ -36,8 +34,7 @@ module CloudfrontAssetHost
             path = rewritten_css_path(path) unless CloudfrontAssetHost.rewrite_css_path.eql?(false)
 
             data_path = gzip ? gzipped_path(path) : path
-            AWS::S3::S3Object.store(key, File.read(data_path), CloudfrontAssetHost.bucket, headers_for_path(extension, gzip)) unless dryrun
-
+            AWS::S3::Bucket.new(CloudfrontAssetHost.bucket).objects[key].write(File.read(data_path),headers_for_path(extension, gzip)) unless dryrun
             File.unlink(data_path) if gzip && File.exists?(data_path)
           else
             puts "= #{key}" if verbose
@@ -120,12 +117,12 @@ module CloudfrontAssetHost
       def headers_for_path(extension, gzip = false)
         mime = ext_to_mime[extension] || 'application/octet-stream'
         headers = {
-          :'Content-Type' => mime,
-          :'Cache-Control' => "public,max-age=#{1.years.to_i}",
-          :Expires => 1.year.from_now.utc.to_s,
-          :access => "public-read"
+          :content_type => mime,
+          :cache_control => "public,max-age=#{1.years.to_i}",
+          :expires => 1.year.from_now.utc.to_s,
+          :acl => :public_read
         }
-        headers['Content-Encoding'] = 'gzip' if gzip
+        headers[:content_encoding] = 'gzip' if gzip
 
         headers
       end
@@ -145,7 +142,7 @@ module CloudfrontAssetHost
       # end
 
       def establish_connection
-        AWS::S3::Base.establish_connection!( 
+        AWS.config( 
             :access_key_id => config['access_key_id'],
             :secret_access_key => config['secret_access_key']
           )
